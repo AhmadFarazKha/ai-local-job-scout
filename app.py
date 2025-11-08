@@ -1,82 +1,88 @@
 import streamlit as st
 import pandas as pd
-from src.core.job_scout_agent import get_tech_industry_data
-from src.utils.file_handler import create_directories_if_not_exist
-from dotenv import load_dotenv
+from src.core.job_scout_agent import search_jobs
 
-# Ensure consistency and load environment variables
-create_directories_if_not_exist("data")
-load_dotenv()
+# Page config
+st.set_page_config(page_title="AI Local Job Scout", page_icon="🎯", layout="wide")
 
-# --- Page Configuration ---
-st.set_page_config(
-    page_title="AI Local Job Scout",
-    page_icon="🗺️",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
+st.title("🎯 AI Local Job Scout")
+st.markdown("**Find and rank local job opportunities based on AI semantic matching**")
 
-# --- Initial State Setup ---
-if 'city_input' not in st.session_state:
-    st.session_state.city_input = "Lahore"
-if 'profile_input' not in st.session_state:
-    st.session_state.profile_input = "AI Engineer with strong skills in Computer Vision, Python, MLOps, and Data Science."
+# Sidebar
+with st.sidebar:
+    st.header("1. Define Your Target")
+    
+    city = st.selectbox(
+        "Target City",
+        ["Peshawar", "Lahore", "Islamabad", "Karachi", "Rawalpindi", "Faisalabad", "Multan"]
+    )
+    
+    job_title = st.text_input(
+        "Job Title",
+        placeholder="e.g., Surgeon, Software Engineer, Teacher",
+        value="Software Engineer"
+    )
+    
+    user_profile = st.text_area(
+        "Your Profile / Skills",
+        placeholder="Describe your experience and skills",
+        height=100,
+        value="Software engineer with Python expertise"
+    )
+    
+    search_btn = st.button("🔍 Search Jobs", use_container_width=True)
 
-# --- Application Content ---
-st.title("🗺️ AI Local Tech Job Scout")
-st.markdown("<p style='text-align: center; color: var(--text-color); font-size: 1.1rem; margin-bottom: 2rem;'>Find and rank local tech companies based on semantic match with your specific AI/ML profile.</p>", unsafe_allow_html=True)
-
-col_main_l, col_main_center, col_main_r = st.columns([1, 4, 1])
-
-with col_main_center:
-    with st.container(border=True):
-        st.markdown("### 1. Define Your Target")
-        
-        st.session_state.city_input = st.text_input(
-            "Target City:",
-            value=st.session_state.city_input,
-            placeholder="e.g., Lahore, Islamabad, Mianwali",
-            key="city_input_key"
-        )
-        
-        st.session_state.profile_input = st.text_area(
-            "Your Profile / Desired Skills:",
-            value=st.session_state.profile_input,
-            placeholder="e.g., AI Engineer with strong skills in Computer Vision, Python, MLOps, and Data Science.",
-            height=150,
-            key="profile_input_key"
-        )
-        
-        st.markdown("---")
-        
-        if st.button("Search & Rank Local Opportunities 🔎", use_container_width=True, key="btn_search"):
-            if not st.session_state.city_input or not st.session_state.profile_input:
-                st.warning("Please enter both the City and your Profile/Skills.")
-                st.stop()
+# Main content
+if search_btn:
+    if not job_title or not user_profile:
+        st.error("❌ Please fill all fields")
+    else:
+        with st.spinner("⏳ Searching..."):
+            results = search_jobs(job_title, city, user_profile)
             
-            with st.spinner(f"Analyzing {st.session_state.city_input}'s tech market and ranking results..."):
-                try:
-                    search_results_df = get_tech_industry_data(st.session_state.city_input, st.session_state.profile_input)
-                    
-                    st.markdown("---")
-                    st.subheader(f"2. Ranked Opportunities in {st.session_state.city_input.title()}")
-
-                    if search_results_df.empty:
-                         st.warning(f"No specific company data found in our database for {st.session_state.city_input.title()}.")
-                    else:
-                        st.success("Results ranked by semantic relevance to your profile!")
-                        
-                        # Display results using markdown table for better link rendering
-                        st.markdown(
-                            search_results_df.to_html(escape=False), 
-                            unsafe_allow_html=True
-                        )
-                        
-                except Exception as e:
-                    # Note: First run will download the Sentence Transformer model (100MB+)
-                    st.error(f"An unexpected error occurred during search: {e}")
-                    st.error("If this is the first run, ensure your internet connection is stable (the AI model needs to download ~100MB).")
-
-st.markdown("---")
-st.info("Powered by Semantic Ranking (SentenceTransformers/Scikit-learn) and Python.")
-st.markdown("<p style='text-align: center; color: #a0a0a0; margin-top: 2rem;'>Developed with ❤️ in Mianwali, Punjab, Pakistan</p>", unsafe_allow_html=True)
+            if results.empty:
+                st.warning(f"⚠️ No jobs found for '{job_title}' in {city}")
+            else:
+                # Stats
+                col1, col2, col3 = st.columns(3)
+                col1.metric("📊 Match Score", f"{results['Relevance Score'].mean():.1f}%")
+                col2.metric("🏢 Jobs Found", len(results))
+                col3.metric("✅ Excellent Match", len(results[results['Relevance Score'] >= 75]))
+                
+                st.markdown("---")
+                
+                # Results table
+                st.subheader(f"2. Results for '{job_title}' in {city}")
+                
+                display_df = results.copy()
+                display_df['Relevance Score'] = display_df['Relevance Score'].astype(str) + "%"
+                
+                st.dataframe(
+                    display_df[['Job Title', 'Company Name', 'Location', 'Relevance Score', 'Match Quality', 'Source']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                st.markdown("---")
+                
+                # Detailed view
+                st.subheader("📋 Job Details")
+                
+                for idx, row in results.iterrows():
+                    with st.expander(f"{row['Company Name']} - {row['Job Title']} ({row['Relevance Score']:.1f}%)"):
+                        st.write(f"**Location:** {row['Location']}")
+                        st.write(f"**Match Quality:** {row['Match Quality']}")
+                        st.write(f"**Posted:** {row['Posted Date']}")
+                        st.write(f"**Source:** {row['Source']}")
+                        if row['Apply Link']:
+                            st.markdown(f"**[Apply Now →]({row['Apply Link']})**")
+                
+                # Download
+                csv = results.to_csv(index=False)
+                st.download_button(
+                    "📥 Download Results",
+                    data=csv,
+                    file_name=f"jobs_{city}_{job_title}.csv"
+                )
+else:
+    st.info("👈 Enter your search criteria and click 'Search Jobs'")
